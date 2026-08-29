@@ -21,3 +21,6 @@ tests/test_organizer_pipeline.py
 .claude/
 catalog.jsonl.gz
 SHA256SUMS
+
+# semantic index cache (rebuilt from catalog on first free-form query)
+data/catalog.semantic.npz

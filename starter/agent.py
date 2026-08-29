@@ -17,6 +17,7 @@ from starter.parser import parse_message
 
 CATEGORY_BONUS = 2.5
 BUDGET_WEIGHT = 2.0
+SEMANTIC_WEIGHT = 4.0
 PROFILE_TAG_WEIGHT = 0.05
 POPULARITY_WEIGHT = 0.001
 RERANK_POOL = 300
@@ -36,7 +37,7 @@ EXACT_CARD_BONUS = 10.0
 class _SessionState:
     __slots__ = (
         "profile", "category", "constraints", "no_pref",
-        "card_drained", "scenario", "override_seen",
+        "card_drained", "scenario", "override_seen", "semantic",
     )
 
     def __init__(self, profile: dict) -> None:
@@ -47,6 +48,8 @@ class _SessionState:
         self.card_drained = False
         self.scenario: str | None = None
         self.override_seen = False
+        # pid -> best cosine from the self-trained semantic index (freeform path)
+        self.semantic: dict[str, float] = {}
 
     def add_constraints(self, values: list[str]) -> None:
         for value in values:
@@ -57,9 +60,11 @@ class _SessionState:
 
 class Agent:
     def __init__(self, catalog_path: str | Path = "data/catalog.jsonl") -> None:
+        self.catalog_path = Path(catalog_path)
         self.index = IntentIndex(catalog_path)
         self._sessions: dict[str, _SessionState] = {}
         self._fuzzy_cache: dict[str, list[str]] = {}
+        self._semantic = None  # lazy: trained/loaded on first free-form query
         # The reveal gate optimizes the evaluator's rank-lock mechanic; for a
         # human conversation (demo) always showing the list is better UX.
         self.always_reveal = False
@@ -93,9 +98,14 @@ class Agent:
         event = parse_message(str(user_message), turn)
         usage = {"prompt_tokens": 0, "completion_tokens": 0}
         if event["type"] == "freeform":
-            # Off-template message (live demo / real user): Claude extracts
-            # the same slot structure the template parser would have. Never
-            # reached by the official evaluator; failure falls through.
+            # Off-template message (live demo / real user). Never reached by
+            # the official evaluator. Two channels, both optional:
+            # 1) self-trained latent semantic index — matches by meaning,
+            #    no network, no keys;
+            # 2) Claude slot extraction, when credentials are configured.
+            for pid, cosine in self._semantic_query(event["text"]):
+                if cosine > state.semantic.get(pid, 0.0):
+                    state.semantic[pid] = cosine
             extracted = llm_layer.extract(event["text"])
             if extracted:
                 usage = extracted["usage"]
@@ -153,6 +163,21 @@ class Agent:
             runner_up > 0 and top / runner_up >= REVEAL_RATIO
         )
 
+    def _semantic_query(self, text: str) -> list[tuple[str, float]]:
+        if self._semantic is None:
+            try:
+                from starter.semantic import SemanticIndex
+
+                self._semantic = SemanticIndex(self.catalog_path)
+            except Exception:
+                self._semantic = False  # numpy missing / training failed: stay off
+        if not self._semantic:
+            return []
+        try:
+            return self._semantic.query(text)
+        except Exception:
+            return []
+
     def _match_keys(self, constraint: str) -> list[str]:
         # Simulator quotes are exact index keys; LLM-extracted free text may
         # only be a substring of one. Fuzzy matching runs (and is cached)
@@ -179,6 +204,9 @@ class Agent:
             for key in self._match_keys(constraint):
                 for pid, weight in self.index.constraint_map.get(key, ()):
                     scores[pid] += weight
+
+        for pid, cosine in state.semantic.items():
+            scores[pid] += SEMANTIC_WEIGHT * cosine
 
         category_ids = (
             self.index.category_map.get(state.category, []) if state.category else []

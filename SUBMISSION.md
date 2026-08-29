@@ -56,7 +56,7 @@ modeling.
 
 - **Development tools**: VS Code, Claude Code, git/GitHub
 - **APIs**: Anthropic Claude API (claude-opus-5; optional free-form extraction layer only — zero LLM calls on the scored path)
-- **Libraries/frameworks**: Python 3 standard library only for the core; `anthropic` SDK (optional); pytest for tests
+- **Libraries/frameworks**: Python 3 standard library for the scored engine; numpy for the self-trained latent semantic index; `anthropic` SDK (optional); pytest for tests
 - **Datasets/assets**: Official frozen Track 4 catalog + 200 public sessions (Amazon Reviews 2023 derived, provided by organizers). No external training data.
 
 ## Demo video runsheet (~3 minutes)
@@ -69,8 +69,9 @@ modeling.
    architecture diagram (design artifact §02).
 3. **1:05–2:05 — Live demo.** `python3 demo.py`:
    - Type a templated buying opener → instant top-10, show state line.
-   - Type a *free-form* sentence ("actually I want something waterproof under $80")
-     → Claude extraction fires, state updates, list re-ranks. Mention fallback safety.
+   - Type a *free-form* sentence ("cozy winter sweater", "gold necklace for a wedding")
+     → the self-trained semantic index matches by meaning — no API, no network.
+     Mention: "we trained this dense retrieval model on the catalog itself, in numpy."
    - Show an override ("forget that — white casual sneakers instead").
 4. **2:05–2:45 — Results.** Run `python3 -m evaluator.local_evaluator`; show the
    aggregate + per-scenario JSON. Flash the ablation table from the README.

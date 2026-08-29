@@ -48,17 +48,28 @@ Per-scenario (full system): buying 1.00/0.99/2.4 · browsing 1.00/0.96/2.6 ·
 intent_override 1.00/0.95/3.9 (hits before the override turn are ignored by
 protocol, so ~3.5 is the floor) · boundary 1.00/0.93/3.7.
 
-### LLM layer
+### The free-form path: self-trained semantic retrieval + optional LLM
 
 The deterministic engine covers the evaluation protocol entirely — the scored
-run uses **zero LLM tokens**. The Claude layer exists so the agent generalizes
-to real language: free-form messages are extracted to the same slot structure
-(model `claude-opus-5`, structured outputs, 8s timeout, silent fallback to the
-deterministic path on any failure). Try it in the interactive demo.
+run uses **zero LLM calls and zero network**. Real, open-ended language is
+handled by two additional channels, exercised in the interactive demo:
+
+- **Self-trained latent semantic index** (`starter/semantic.py`): we train a
+  dense retrieval model on the competition's own catalog — TF-IDF over the
+  50k product documents factorized with randomized SVD into a 128-dim latent
+  space (LSA), implemented in pure numpy. Trains in ~6 seconds, caches to
+  disk, and matches free-form queries by *meaning* ("cozy winter sweater"
+  finds knit pullovers that never contain the word "cozy"). Built lazily on
+  the first free-form query, so the evaluator never pays for it.
+- **Claude slot extraction** (`starter/llm_layer.py`, optional): when
+  `ANTHROPIC_API_KEY` is set, free-form messages are also extracted to the
+  same constraint-slot structure the template parser produces (structured
+  outputs, 8s timeout, silent fallback). Works without it.
 
 ## Setup
 
-Python 3.10+. The core has **no dependencies beyond the standard library**.
+Python 3.10+. The scored engine has **no dependencies beyond the standard
+library**; the semantic free-form channel needs `numpy` (`pip install numpy`).
 
 ```bash
 git clone https://github.com/kimiyangg/techjam-shopping-copilot.git
@@ -71,7 +82,7 @@ shasum -a 256 -c <(grep catalog SHA256SUMS)
 gzip -dk catalog.jsonl.gz && mv catalog.jsonl data/catalog.jsonl
 ```
 
-Optional, for the LLM layer only: `pip install anthropic` and set
+Optional, for the Claude extraction layer only: `pip install anthropic` and set
 `ANTHROPIC_API_KEY` (never committed; the agent works fully without it).
 
 ## Reproduce our results
@@ -90,6 +101,7 @@ The evaluator is byte-identical to the organizer's release — verify with
 - `starter/agent.py` — session state, reveal policy, ranking
 - `starter/intent_index.py` — offline inverse intent-card index
 - `starter/parser.py` — protocol template parser
+- `starter/semantic.py` — self-trained LSA index for free-form retrieval
 - `starter/llm_layer.py` — optional Claude extraction for free-form input
 - `evaluator/`, `data/public_set.jsonl` — official, unmodified
 - `demo.py` — interactive CLI demo

@@ -172,3 +172,41 @@ class TestLLMLayer:
         assert llm_layer.extract("hello") is None or isinstance(
             llm_layer.extract("hello"), dict
         )
+
+
+class TestSemanticIndex:
+    def test_trains_and_matches_by_meaning(self, tmp_path):
+        import json as jsonlib
+
+        from starter.semantic import SemanticIndex
+
+        # MIN_DF=3, so repeat product families to build a vocabulary.
+        products = []
+        for i in range(4):
+            products.append({
+                "parent_asin": f"BOOT{i}",
+                "title": "Waterproof Hiking Boot",
+                "features": ["waterproof leather upper", "rugged outdoor sole"],
+                "categories": ["Shoes", "Hiking Boots"],
+            })
+            products.append({
+                "parent_asin": f"TEE{i}",
+                "title": "Cotton Graphic Tshirt",
+                "features": ["soft cotton fabric", "casual summer wear"],
+                "categories": ["Clothing", "Shirts"],
+            })
+        path = tmp_path / "catalog.jsonl"
+        path.write_text("\n".join(jsonlib.dumps(p) for p in products) + "\n")
+        index = SemanticIndex(path, cache_path=tmp_path / "cache.npz")
+        results = index.query("rugged waterproof boots for hiking outdoors")
+        assert results and results[0][0].startswith("BOOT")
+
+    def test_agent_degrades_without_semantic(self, tiny_catalog, monkeypatch):
+        from starter import agent as agent_mod
+
+        monkeypatch.setattr(agent_mod.llm_layer, "extract", lambda m: None)
+        agent = agent_mod.Agent(tiny_catalog)
+        agent._semantic = False  # simulate numpy unavailable
+        agent.reset("s1", {})
+        response = agent.respond("s1", "anything waterproof?", 1, 10)
+        assert isinstance(response["recommendations"], list)
