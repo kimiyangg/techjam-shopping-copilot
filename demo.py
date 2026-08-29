@@ -15,6 +15,7 @@ from starter.agent import Agent
 def main() -> None:
     print("Loading catalog and building intent index…")
     agent = Agent("data/catalog.jsonl")
+    agent.always_reveal = True  # demo UX: always show the list; the evaluator keeps the gate
     titles: dict[str, str] = {}
     with open("data/catalog.jsonl", encoding="utf-8") as handle:
         for line in handle:

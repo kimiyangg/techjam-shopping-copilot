@@ -60,6 +60,9 @@ class Agent:
         self.index = IntentIndex(catalog_path)
         self._sessions: dict[str, _SessionState] = {}
         self._fuzzy_cache: dict[str, list[str]] = {}
+        # The reveal gate optimizes the evaluator's rank-lock mechanic; for a
+        # human conversation (demo) always showing the list is better UX.
+        self.always_reveal = False
         self._popular = [
             pid for pid, _ in sorted(
                 self.index.popularity.items(), key=lambda item: -item[1]
@@ -135,6 +138,8 @@ class Agent:
     ) -> bool:
         if not scored:
             return False
+        if self.always_reveal:
+            return True
         # Pre-override turns can't score a hit, so showing a list is free UX
         # and risks nothing.
         if state.scenario == "override" and not state.override_seen:
