@@ -31,6 +31,8 @@ protocol locks the target's rank at first appearance.
 0.125 / 0.068 / 9.81 / 0.107). All four scenario types (buying, browsing, intent
 override, boundary) hit 100%. The scored run uses zero LLM tokens and <50ms/turn.
 
+**How it maps to the four pillars** — Dual-track intent routing (buying/browsing/override detected at turn 1, distinct behavior per track); hybrid multi-route retrieval (exact-constraint, category, self-trained dense vector, fuzzy) fused in one ranker; a dialog state machine with incremental slots, override handling, no-preference locking, and over-generality-triggered proactive clarification (the confidence gate); short-term context distillation (conversation re-embedded each turn) plus profile-aware ranking; all optimized directly against the HR@10/MRR/MTTC matrix.
+
 **How we built it** — Offline, we derive every product's possible constraint phrases
 using the protocol's own public derivation and invert them into an IDF-weighted
 index. At runtime, a deterministic parser covers the protocol's message templates;

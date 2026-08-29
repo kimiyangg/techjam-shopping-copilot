@@ -35,6 +35,16 @@ catalog product and invert it into two maps: `constraint phrase → products`
    because the evaluator locks the target's rank on the first turn it appears,
    revealing an unconfident list trades 30%-weighted MRR for 20%-weighted MTTC.
 
+
+### Mapping to the track's four pillars
+
+| Track pillar | Where it lives in this system |
+|---|---|
+| **I. Intent routing & hybrid pipeline** | Turn-1 routing into buying / browsing / override tracks (`parser.py` + per-scenario behavior); multi-route retrieval = exact-constraint route + category route + self-trained dense vector route (`semantic.py`) + fuzzy matching, fused in `_rank()`; optional LLM semantic stage (`llm_layer.py`) kept off the scored path by design |
+| **II. Dialog strategy / dynamic state machine** | Incremental slot accumulation, intent-override handling, "no preference" locking (`_SessionState`); over-generality triggers a retrieval cutoff + proactive clarification — the confidence-gated reveal withholds the list and asks the maximum-information question until the pool converges |
+| **III. Self-evolution / context distillation** | Short-term session state re-distilled every turn (free-form history re-embedded as one growing query); aggregate `user_profile` preferences feed ranking; runtime strategy re-orchestration between template / semantic / LLM paths by input type |
+| **IV. Evaluation matrix** | Optimized directly for HR@10 / MRR / MTTC, including the rank-lock tension between MRR and MTTC that motivates the reveal gate |
+
 ### Ablation (public set, official evaluator, unmodified)
 
 | Stage | HR@10 | MRR | MTTC | TechnicalScore |
