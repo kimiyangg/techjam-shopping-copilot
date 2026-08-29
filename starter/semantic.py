@@ -161,20 +161,42 @@ class SemanticIndex:
 
     # ---------- inference ----------
 
-    def query(self, text: str, top_n: int = 200) -> list[tuple[str, float]]:
+    def embed(self, text: str):
+        """Normalized latent vector for arbitrary text, or None if OOV."""
         np = self.np
         counts = Counter(t for t in _tokenize(text) if t in self.vocab)
         if not counts:
-            return []
+            return None
         cols = np.array([self.vocab[t] for t in counts], dtype=np.int32)
         values = np.array(list(counts.values()), dtype=np.float32)
         with np.errstate(all="ignore"):
             weights = (1.0 + np.log(values)) * self.idf[cols]
             query_vec = weights @ self.term_vecs[cols]
             norm = float(np.linalg.norm(query_vec))
-            if norm == 0:
-                return []
-            scores = self.doc_vecs @ (query_vec / norm)
+        if norm == 0:
+            return None
+        return query_vec / norm
+
+    def load_alignment(self, path: str | Path) -> bool:
+        """Load a trained query->product alignment matrix (see stress/train_alignment.py)."""
+        path = Path(path)
+        if not path.exists():
+            return False
+        self.alignment = self.np.load(path)["W"].astype(self.np.float32)
+        return True
+
+    def query(self, text: str, top_n: int = 200) -> list[tuple[str, float]]:
+        np = self.np
+        query_vec = self.embed(text)
+        if query_vec is None:
+            return []
+        with np.errstate(all="ignore"):
+            aligned = getattr(self, "alignment", None)
+            if aligned is not None:
+                query_vec = query_vec @ aligned
+                norm = float(np.linalg.norm(query_vec)) or 1.0
+                query_vec = query_vec / norm
+            scores = self.doc_vecs @ query_vec
         top = np.argpartition(-scores, min(top_n, len(scores) - 1))[:top_n]
         top = top[np.argsort(-scores[top])]
         return [(self.pids[i], float(scores[i])) for i in top if scores[i] > 0]

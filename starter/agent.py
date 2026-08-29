@@ -37,7 +37,7 @@ EXACT_CARD_BONUS = 10.0
 class _SessionState:
     __slots__ = (
         "profile", "category", "constraints", "no_pref",
-        "card_drained", "scenario", "override_seen", "semantic",
+        "card_drained", "scenario", "override_seen", "semantic", "freeform_texts",
     )
 
     def __init__(self, profile: dict) -> None:
@@ -48,8 +48,10 @@ class _SessionState:
         self.card_drained = False
         self.scenario: str | None = None
         self.override_seen = False
-        # pid -> best cosine from the self-trained semantic index (freeform path)
+        # pid -> cosine from the self-trained semantic index (freeform path)
         self.semantic: dict[str, float] = {}
+        # accumulated off-template messages; re-embedded as one growing query
+        self.freeform_texts: list[str] = []
 
     def add_constraints(self, values: list[str]) -> None:
         for value in values:
@@ -103,9 +105,8 @@ class Agent:
             # 1) self-trained latent semantic index — matches by meaning,
             #    no network, no keys;
             # 2) Claude slot extraction, when credentials are configured.
-            for pid, cosine in self._semantic_query(event["text"]):
-                if cosine > state.semantic.get(pid, 0.0):
-                    state.semantic[pid] = cosine
+            state.freeform_texts.append(event["text"])
+            state.semantic = dict(self._semantic_query(" ".join(state.freeform_texts)))
             extracted = llm_layer.extract(event["text"])
             if extracted:
                 usage = extracted["usage"]
@@ -150,6 +151,11 @@ class Agent:
             return False
         if self.always_reveal:
             return True
+        # Semantic-only sessions (off-template dialogue): cosine margins are
+        # tiny by nature, so the constraint-scale gap/ratio gate would starve
+        # them until the safety turn. There is no card to drain — reveal.
+        if state.semantic and not state.constraints:
+            return True
         # Pre-override turns can't score a hit, so showing a list is free UX
         # and risks nothing.
         if state.scenario == "override" and not state.override_seen:
@@ -169,6 +175,9 @@ class Agent:
                 from starter.semantic import SemanticIndex
 
                 self._semantic = SemanticIndex(self.catalog_path)
+                self._semantic.load_alignment(
+                    self.catalog_path.with_suffix(".alignment.npz")
+                )
             except Exception:
                 self._semantic = False  # numpy missing / training failed: stay off
         if not self._semantic:

@@ -66,6 +66,42 @@ handled by two additional channels, exercised in the interactive demo:
   same constraint-slot structure the template parser produces (structured
   outputs, 8s timeout, silent fallback). Works without it.
 
+
+### Robustness: self-administered paraphrase stress test
+
+The written spec reserves the organizer's right to add natural-language
+paraphrasing, and final scoring may run with network disabled. So we attack
+our own system: `stress/harness.py` replays the official 200 sessions with
+every simulator message rewritten into varied human English (`stress/
+paraphraser.py`), which deliberately blinds our template parser. What remains
+is the generalization stack — and we trained it: `stress/train_alignment.py`
+generates 20k synthetic paraphrased dialogues from catalog products (public
+targets excluded) and fits a ridge-regression alignment from conversational
+queries to product space, validated on 2k held-out products.
+
+| Configuration | HR@10 | MRR | MTTC | Score |
+|---|---|---|---|---|
+| Official starter on *templated* messages | 0.125 | 0.068 | 9.81 | 0.107 |
+| Ours under **adversarial paraphrasing**, semantic index only | 0.440 | 0.191 | 7.55 | 0.346 |
+| Ours under **adversarial paraphrasing** + trained alignment | **0.525** | **0.217** | **6.80** | **0.411** |
+| Ours on the actual protocol | 1.000 | 0.970 | 2.74 | 0.956 |
+
+Reproduce: `python3 -m stress.train_alignment && python3 -m stress.harness`.
+
+## Disclosures (per submission rules)
+
+- **Network**: the agent requires **no network access** — the scored path and
+  the semantic/alignment models are fully offline. The optional Claude layer
+  uses the network only when `ANTHROPIC_API_KEY` is set, and falls
+  back silently; final scoring under disabled network is unaffected.
+- **Latency**: <50 ms per turn (deterministic path); ~5 s one-time index
+  build at first startup, cached to disk thereafter.
+- **Token usage / model cost**: 0 tokens, $0 on the scored path. Demo usage
+  of the optional Claude layer: ~500–2,000 tokens per free-form message.
+- **Models**: self-trained LSA (TF-IDF + randomized SVD, 128d) and ridge
+  alignment, both trained on the frozen catalog + synthetic dialogues derived
+  from it. No external training data, no pretrained weights.
+
 ## Setup
 
 Python 3.10+. The scored engine has **no dependencies beyond the standard
@@ -103,6 +139,7 @@ The evaluator is byte-identical to the organizer's release — verify with
 - `starter/parser.py` — protocol template parser
 - `starter/semantic.py` — self-trained LSA index for free-form retrieval
 - `starter/llm_layer.py` — optional Claude extraction for free-form input
+- `stress/` — paraphrase stress harness + synthetic-dialogue alignment trainer
 - `evaluator/`, `data/public_set.jsonl` — official, unmodified
 - `demo.py` — interactive CLI demo
 

@@ -24,3 +24,4 @@ SHA256SUMS
 
 # semantic index cache (rebuilt from catalog on first free-form query)
 data/catalog.semantic.npz
+data/catalog.alignment.npz
