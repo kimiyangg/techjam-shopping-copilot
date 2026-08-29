@@ -8,6 +8,7 @@ could ever quote maps back to the products it could be quoting about.
 from __future__ import annotations
 
 import json
+import math
 import re
 from collections import defaultdict
 from pathlib import Path
@@ -42,6 +43,8 @@ class IntentIndex:
         self.popularity: dict[str, float] = {}
         # small per-product blob (card text + category) for profile-tag tie-breaks
         self.blob: dict[str, str] = {}
+        # exact card key-set per product, for the drained-card equality boost
+        self.cards: dict[str, frozenset[str]] = {}
         self._build(Path(catalog_path))
 
     def _build(self, catalog_path: Path) -> None:
@@ -79,3 +82,16 @@ class IntentIndex:
                 if isinstance(rating_number, (int, float)):
                     self.popularity[pid] = min(float(rating_number), 5000.0) / 5000.0
                 self.blob[pid] = " ".join([*seen, leaf])
+                self.cards[pid] = frozenset(seen)
+        self._apply_idf()
+
+    def _apply_idf(self) -> None:
+        # A constraint shared by 3 products is far more informative than one
+        # shared by 8,000. Scale each posting's weight by inverse document
+        # frequency so rare, specific quotes dominate the score.
+        total = max(len(self.blob), 1)
+        for constraint, postings in self.constraint_map.items():
+            factor = 1.0 + math.log10(total / len(postings))
+            self.constraint_map[constraint] = [
+                (pid, weight * factor) for pid, weight in postings
+            ]
