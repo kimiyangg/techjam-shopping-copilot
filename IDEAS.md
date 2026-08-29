@@ -1,5 +1,11 @@
 # TikTok TechJam 2026 — Track 4: Shopping Copilot — Master Doc
 
+> **STATUS (29 Aug): implementation complete — this file is the pre-implementation
+> plan, kept for the record. See `DEVLOG.md` for everything actually built and
+> measured (final: HR@10 1.000 / MRR 0.970 / MTTC 2.74 / score 0.956), and
+> `SUBMISSION.md` for the remaining submission steps.**
+
+
 The single reference for our whole development process. Merged from: official info doc (bit.ly/TikTokTechJam2026Info) and the full 28 Aug Track 4 webinar (`transcript.md` — raw source kept in repo).
 
 ---
