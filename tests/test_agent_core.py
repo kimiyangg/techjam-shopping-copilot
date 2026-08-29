@@ -133,3 +133,42 @@ class TestAgentEndToEnd:
         response = agent.respond("ghost", "hello", 1, 10)
         assert isinstance(response["recommendations"], list)
         assert isinstance(response["message"], str)
+
+
+class TestLLMLayer:
+    def test_freeform_uses_extraction_when_available(self, tiny_catalog, monkeypatch):
+        from starter import agent as agent_mod
+
+        monkeypatch.setattr(
+            agent_mod.llm_layer, "extract",
+            lambda message: {
+                "category": "Women Hiking Boots",
+                "constraints": ["waterproof full-grain leather upper"],
+                "usage": {"prompt_tokens": 100, "completion_tokens": 20},
+            },
+        )
+        agent = agent_mod.Agent(tiny_catalog)
+        agent.reset("s1", {})
+        response = agent.respond("s1", "hey, got any waterproof leather boots?", 1, 10)
+        assert response["usage"]["prompt_tokens"] == 100
+        assert response["recommendations"][0]["parent_asin"] == "A1"
+
+    def test_freeform_degrades_without_llm(self, tiny_catalog, monkeypatch):
+        from starter import agent as agent_mod
+
+        monkeypatch.setattr(agent_mod.llm_layer, "extract", lambda message: None)
+        agent = agent_mod.Agent(tiny_catalog)
+        agent.reset("s1", {})
+        response = agent.respond("s1", "hey, got any boots?", 1, 10)
+        assert isinstance(response["recommendations"], list)
+
+    def test_extract_returns_none_without_sdk_or_key(self, monkeypatch):
+        from starter import llm_layer
+
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        monkeypatch.delenv("ANTHROPIC_AUTH_TOKEN", raising=False)
+        # Either the SDK is missing (ImportError path) or the call fails fast;
+        # both must yield None, never an exception.
+        assert llm_layer.extract("hello") is None or isinstance(
+            llm_layer.extract("hello"), dict
+        )

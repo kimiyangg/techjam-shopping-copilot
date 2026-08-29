@@ -11,6 +11,7 @@ from __future__ import annotations
 from collections import defaultdict
 from pathlib import Path
 
+from starter import llm_layer
 from starter.intent_index import IntentIndex, normalize, parse_budget
 from starter.parser import parse_message
 
@@ -58,6 +59,7 @@ class Agent:
     def __init__(self, catalog_path: str | Path = "data/catalog.jsonl") -> None:
         self.index = IntentIndex(catalog_path)
         self._sessions: dict[str, _SessionState] = {}
+        self._fuzzy_cache: dict[str, list[str]] = {}
         self._popular = [
             pid for pid, _ in sorted(
                 self.index.popularity.items(), key=lambda item: -item[1]
@@ -86,6 +88,17 @@ class Agent:
             raise RuntimeError("reset must be called before respond")
 
         event = parse_message(str(user_message), turn)
+        usage = {"prompt_tokens": 0, "completion_tokens": 0}
+        if event["type"] == "freeform":
+            # Off-template message (live demo / real user): Claude extracts
+            # the same slot structure the template parser would have. Never
+            # reached by the official evaluator; failure falls through.
+            extracted = llm_layer.extract(event["text"])
+            if extracted:
+                usage = extracted["usage"]
+                if extracted["category"] and not state.category:
+                    state.category = normalize(extracted["category"])
+                event = {"type": "llm_extraction", "constraints": extracted["constraints"]}
         if event["type"] in {"initial_exploring", "initial_buying", "initial_override"}:
             state.category = normalize(event["category"])
             state.scenario = event["type"].removeprefix("initial_")
@@ -114,7 +127,7 @@ class Agent:
             "message": message,
             "ask_attribute": ask,
             "recommendations": recommendations,
-            "usage": {"prompt_tokens": 0, "completion_tokens": 0},
+            "usage": usage,
         }
 
     def _should_reveal(
@@ -135,6 +148,21 @@ class Agent:
             runner_up > 0 and top / runner_up >= REVEAL_RATIO
         )
 
+    def _match_keys(self, constraint: str) -> list[str]:
+        # Simulator quotes are exact index keys; LLM-extracted free text may
+        # only be a substring of one. Fuzzy matching runs (and is cached)
+        # only for off-template constraints.
+        if constraint in self.index.constraint_map:
+            return [constraint]
+        cached = self._fuzzy_cache.get(constraint)
+        if cached is not None:
+            return cached
+        matches: list[str] = []
+        if len(constraint) >= 4:
+            matches = [key for key in self.index.constraint_map if constraint in key][:50]
+        self._fuzzy_cache[constraint] = matches
+        return matches
+
     def _rank(self, state: _SessionState, top_k: int) -> list[tuple[str, float]]:
         scores: dict[str, float] = defaultdict(float)
         budget: float | None = None
@@ -143,8 +171,9 @@ class Agent:
             value = parse_budget(constraint)
             if value is not None:
                 budget = value
-            for pid, weight in self.index.constraint_map.get(constraint, ()):
-                scores[pid] += weight
+            for key in self._match_keys(constraint):
+                for pid, weight in self.index.constraint_map.get(key, ()):
+                    scores[pid] += weight
 
         category_ids = (
             self.index.category_map.get(state.category, []) if state.category else []
