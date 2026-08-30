@@ -139,24 +139,35 @@ class IntentIndex:
         orphan fragments that fuzzy-match unrelated products.
 
         We own the full key set, so we can recover the intended segmentation:
-        choose the one covering the most parts with exact keys, preferring
-        fewer segments to break ties.
+        among the segmentations the protocol can actually produce, take the one
+        covering the most parts with exact keys, preferring fewer segments to
+        break ties.
+
+        "The protocol can actually produce" is load-bearing. `customer_reply`
+        discloses `matches[:2]`, so the payload is *at most two* constraints.
+        Allowing an unbounded number of segments loses to a decoy catalog:
+        given a real key "alpha; beta" and two other products keyed plain
+        "alpha" and plain "beta", the three-way split scores three exact
+        matches and beats the correct two-way split's two. Capping the
+        segmentation at two makes that ambiguity unrepresentable.
         """
         parts = payload.split("; ")
         if len(parts) == 1:
             return parts
-        # best[i] = (keys_matched, -segments, segmentation) for parts[i:]
-        best: list[tuple[int, int, list[str]]] = [(0, 0, [])] * (len(parts) + 1)
-        best[len(parts)] = (0, 0, [])
-        for start in range(len(parts) - 1, -1, -1):
-            candidates: list[tuple[int, int, list[str]]] = []
-            for end in range(start + 1, len(parts) + 1):
-                segment = "; ".join(parts[start:end])
-                matched, penalty, tail = best[end]
-                hit = 1 if normalize(segment) in self.constraint_map else 0
-                candidates.append((matched + hit, penalty - 1, [segment, *tail]))
-            best[start] = max(candidates, key=lambda item: (item[0], item[1]))
-        return best[0][2]
+        whole = "; ".join(parts)
+        candidates = [[whole]] + [
+            [("; ".join(parts[:i])), ("; ".join(parts[i:]))]
+            for i in range(1, len(parts))
+        ]
+
+        def matched(segmentation: list[str]) -> int:
+            return sum(1 for s in segmentation if normalize(s) in self.constraint_map)
+
+        best = max(candidates, key=lambda seg: (matched(seg), -len(seg)))
+        # Nothing resolved, so we have no evidence either way. Fall back to the
+        # naive split: smaller fragments give the fuzzy resolver more to work
+        # with than one long string that matches nothing.
+        return best if matched(best) else parts
 
     # ---------- free-text lookup ----------
 
