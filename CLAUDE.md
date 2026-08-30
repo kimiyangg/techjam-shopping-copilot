@@ -16,8 +16,11 @@ pip install -r requirements-dev.txt
 # Run the full 200-session evaluation → writes results.json (aggregate + per-session)
 python3 -m evaluator.local_evaluator
 
-# Tests
+# Tests (unit suite + the 200-case black-box conformance corpus)
 python3 -m pytest tests/
+
+# The conformance corpus alone; runs without pytest against any revision
+python3 -m tests.conformance.report
 
 # One-time build of the free-form semantic index (optional; never runs in a turn)
 python3 -m starter.build_index
@@ -41,6 +44,7 @@ Python 3.10+, stdlib-only starter. Baseline scores to beat: HR@10 0.125, MRR 0.0
 - A slate that did not end the session proves those 10 products are not the target (except before an intent override lands). Retire them and show 10 fresh ones — never re-show a failed slate.
 - Intent override: REPLACE contradicted slots, never append — "contradicted" is decided by the catalog (no single card holds both values), not by assuming it. Boundary: "no preference" locks the attribute — never re-ask it.
 - Nothing may train, download, or call the network inside `respond()`; a timeout counts as a miss. Model building goes in `starter/build_index.py` / `Agent.prewarm_semantic()`.
+- `tests/conformance/` must only ever touch the public `Agent` contract (`reset`, `respond`, `always_reveal`) and the unmodified evaluator. That is what lets it be replayed against an old revision in a worktree to prove a change did something. Put implementation-aware tests in `tests/test_agent_hardening.py` instead.
 - Price is a soft preference (never hard-filter on it); ratings are weak popularity signals.
 - No secrets in the repo (LLM keys via env vars). Pretrained models/prebuilt indexes allowed but must be disclosed and reproducible; large assets via download instructions, not committed.
 

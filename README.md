@@ -162,7 +162,8 @@ Optional, for the Claude extraction layer only: `pip install anthropic` and set
 ```bash
 pip install -r requirements-dev.txt    # pytest + numpy + anthropic (none needed to score)
 python3 -m evaluator.local_evaluator   # full 200-session eval → results.json
-python3 -m pytest tests/               # parser, index, agent, bundle isolation, card parity
+python3 -m pytest tests/               # unit tests + 200-case conformance corpus
+python3 -m tests.conformance.report    # the corpus alone, no pytest, any revision
 python3 -m starter.build_index         # one-time free-form semantic index (optional)
 python3 demo.py                        # interactive chat demo
 ```
@@ -177,6 +178,8 @@ The evaluator is byte-identical to the organizer's release — verify with
   derivation, so `starter/` imports nothing from `evaluator/` (parity enforced
   by `tests/test_card_spec_parity.py`)
 - `starter/build_index.py` — one-time semantic index build
+- `tests/conformance/` — 200-case black-box corpus driven through the public
+  `Agent` contract only, so it runs unchanged against any revision
 - `starter/intent_index.py` — offline inverse intent-card index
 - `starter/parser.py` — protocol template parser
 - `starter/semantic.py` — self-trained LSA index for free-form retrieval
