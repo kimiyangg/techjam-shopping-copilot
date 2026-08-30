@@ -30,8 +30,11 @@ protocol locks the target's rank at first appearance.
 **Hit Rate@10 1.000, MRR 0.970, MTTC 2.74, technical score 0.956** (starter baseline:
 0.125 / 0.068 / 9.81 / 0.107). All four scenario types (buying, browsing, intent
 override, boundary) hit 100%. The scored run uses zero LLM tokens and <50ms/turn.
+(Measured through DEVLOG §6; the §7 robustness pass is
+score-neutral-to-positive on synthetic replays and needs one final
+`python3 -m evaluator.local_evaluator` on the real catalog before submission.)
 
-**How it maps to the four pillars** — Dual-track intent routing (buying/browsing/override detected at turn 1, distinct behavior per track); hybrid multi-route retrieval (exact-constraint, category, self-trained dense vector, fuzzy) fused in one ranker; a dialog state machine with incremental slots, override handling, no-preference locking, and over-generality-triggered proactive clarification (the confidence gate); short-term context distillation (conversation re-embedded each turn) plus profile-aware ranking; all optimized directly against the HR@10/MRR/MTTC matrix.
+**How it maps to the four pillars** — Dual-track intent routing (buying/browsing/override detected at turn 1, distinct behavior per track); hybrid multi-route retrieval (exact-constraint, verbatim key recovery, token overlap, category, self-trained dense vector) fused in one ranker; a dialog state machine with incremental slots, catalog-guarded override replacement, no-preference locking that redirects the next question, over-generality-triggered proactive clarification (the confidence gate), and candidate elimination that turns every failed slate into evidence; short-term context distillation (conversation re-embedded each turn) plus profile-aware ranking; all optimized directly against the HR@10/MRR/MTTC matrix.
 
 **How we built it** — Offline, we derive every product's possible constraint phrases
 using the protocol's own public derivation and invert them into an IDF-weighted
@@ -58,7 +61,7 @@ modeling.
 
 - **Development tools**: VS Code, Claude Code, git/GitHub
 - **APIs**: Anthropic Claude API (claude-opus-5; optional free-form extraction layer only — zero LLM calls on the scored path)
-- **Libraries/frameworks**: Python 3 standard library for the scored engine; numpy for the self-trained latent semantic index; `anthropic` SDK (optional); pytest for tests
+- **Libraries/frameworks**: Python 3 standard library for the scored engine (`requirements.txt` is empty by design); numpy for the self-trained latent semantic index; `anthropic` SDK (optional); pytest for tests (`requirements-dev.txt`)
 - **Datasets/assets**: Official frozen Track 4 catalog + 200 public sessions (Amazon Reviews 2023 derived, provided by organizers). No external training data.
 
 ## Demo video runsheet (~3 minutes)
