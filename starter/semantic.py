@@ -44,14 +44,26 @@ def _document_text(product: dict) -> str:
 
 
 class SemanticIndex:
-    def __init__(self, catalog_path: str | Path, cache_path: str | Path | None = None):
+    def __init__(
+        self,
+        catalog_path: str | Path,
+        cache_path: str | Path | None = None,
+        fingerprint: str = "",
+        train: bool = True,
+    ):
         import numpy as np
 
         self.np = np
+        self.fingerprint = fingerprint
         catalog_path = Path(catalog_path)
         cache = Path(cache_path) if cache_path else catalog_path.with_suffix(".semantic.npz")
-        if cache.exists():
-            self._load(cache)
+        if cache.exists() and self._load(cache):
+            pass
+        elif not train:
+            # Training is a multi-minute pure-Python SVD. It must never happen
+            # inside a scored turn (a timeout counts as a miss), so the agent
+            # constructs with train=False and only `prewarm_semantic()` builds.
+            raise FileNotFoundError(f"no valid semantic cache at {cache}")
         else:
             # macOS Accelerate emits spurious fp warnings on float32 matmuls;
             # results are validated finite below.
@@ -148,16 +160,32 @@ class SemanticIndex:
             idf=self.idf,
             terms=self.np.array(list(self.vocab.keys())),
             pids=self.np.array(self.pids),
+            fingerprint=self.np.array([self.fingerprint]),
         )
 
-    def _load(self, cache: Path) -> None:
+    def _load(self, cache: Path) -> bool:
+        """Load a cached index, or return False if it doesn't match this catalog."""
         np = self.np
-        blob = np.load(cache, allow_pickle=False)
-        self.doc_vecs = blob["doc_vecs"]
-        self.term_vecs = blob["term_vecs"]
-        self.idf = blob["idf"]
-        self.vocab = {t: i for i, t in enumerate(blob["terms"].tolist())}
-        self.pids = blob["pids"].tolist()
+        try:
+            blob = np.load(cache, allow_pickle=False)
+            cached = blob["fingerprint"].tolist()[0] if "fingerprint" in blob else ""
+            # An index built from a different catalog silently returns vectors
+            # for products that no longer exist; retrain instead of trusting it.
+            if self.fingerprint and cached != self.fingerprint:
+                return False
+            doc_vecs = blob["doc_vecs"]
+            term_vecs = blob["term_vecs"]
+            idf = blob["idf"]
+            vocab = {t: i for i, t in enumerate(blob["terms"].tolist())}
+            pids = blob["pids"].tolist()
+        except (OSError, ValueError, KeyError, IndexError):
+            return False
+        self.doc_vecs = doc_vecs
+        self.term_vecs = term_vecs
+        self.idf = idf
+        self.vocab = vocab
+        self.pids = pids
+        return True
 
     # ---------- inference ----------
 
@@ -182,7 +210,15 @@ class SemanticIndex:
         path = Path(path)
         if not path.exists():
             return False
-        self.alignment = self.np.load(path)["W"].astype(self.np.float32)
+        try:
+            weight = self.np.load(path, allow_pickle=False)["W"].astype(self.np.float32)
+        except (OSError, ValueError, KeyError):
+            return False
+        # A matrix trained against a different DIMS would silently corrupt every
+        # query; refuse it rather than fall over at inference time.
+        if weight.shape != (self.doc_vecs.shape[1], self.doc_vecs.shape[1]):
+            return False
+        self.alignment = weight
         return True
 
     def query(self, text: str, top_n: int = 200) -> list[tuple[str, float]]:
@@ -197,6 +233,8 @@ class SemanticIndex:
                 norm = float(np.linalg.norm(query_vec)) or 1.0
                 query_vec = query_vec / norm
             scores = self.doc_vecs @ query_vec
+        if len(scores) == 0:
+            return []
         top = np.argpartition(-scores, min(top_n, len(scores) - 1))[:top_n]
         top = top[np.argsort(-scores[top])]
         return [(self.pids[i], float(scores[i])) for i in top if scores[i] > 0]

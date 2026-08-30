@@ -16,7 +16,9 @@ import argparse
 import json
 import random
 
-from evaluator.local_evaluator import coarse_category, intent_card, load_jsonl
+from evaluator.local_evaluator import load_jsonl
+from starter.card_spec import coarse_category, intent_card
+from starter.intent_index import catalog_fingerprint
 from starter.semantic import SemanticIndex
 from stress.paraphraser import Paraphraser
 
@@ -62,7 +64,7 @@ def main() -> None:
             product = json.loads(line)
             products[str(product["parent_asin"])] = product
 
-    index = SemanticIndex(args.catalog)
+    index = SemanticIndex(args.catalog, fingerprint=catalog_fingerprint(args.catalog))
     pid_row = {pid: i for i, pid in enumerate(index.pids)}
     eligible = [p for p in index.pids if p not in public_targets]
     rng = random.Random(42)
