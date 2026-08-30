@@ -2,7 +2,6 @@ __pycache__/
 *.py[cod]
 .DS_Store
 .env
-results.json
 data/catalog.jsonl
 data/releases/
 # Organizer-only code, private evaluation data, manifests, and build reports.
@@ -22,6 +21,8 @@ tests/test_organizer_pipeline.py
 catalog.jsonl.gz
 SHA256SUMS
 
-# semantic index cache (rebuilt from catalog on first free-form query)
+# Derived from the catalog by `python3 -m starter.build_index` (~25 MB) and
+# not committed. The trained alignment matrix (data/catalog.alignment.npz,
+# ~64 KB) IS committed: it is a model artifact the submission must ship to
+# be reproducible, per docs/submission_rules.md.
 data/catalog.semantic.npz
-data/catalog.alignment.npz

@@ -1,0 +1,5 @@
+# Development / evaluation extras. The scored agent path needs none of these:
+# it is standard library only (see requirements.txt).
+pytest>=8.0        # test suite: python3 -m pytest tests/
+numpy>=1.24        # self-trained semantic index (starter/semantic.py), free-form path only
+anthropic>=1.0     # optional Claude slot extraction (starter/llm_layer.py), demo only

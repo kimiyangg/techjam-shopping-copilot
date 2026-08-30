@@ -41,7 +41,17 @@ def parse_message(message: str, turn: int) -> dict:
             }
     match = MATTERS_RE.match(message)
     if match:
-        return {"type": "disclosure", "constraints": match["payload"].split("; ")}
+        # `"; "` is the simulator's join separator, but a single constraint may
+        # contain it too, so this split is ambiguous. We hand the raw payload
+        # along; the agent re-segments it against the known key set
+        # (IntentIndex.segment). The naive split stays as the value for callers
+        # without an index (e.g. stress/paraphraser.py).
+        payload = match["payload"]
+        return {
+            "type": "disclosure",
+            "constraints": payload.split("; "),
+            "payload": payload,
+        }
     match = OVERRIDE_RE.match(message)
     if match:
         return {"type": "override", "constraints": [match["new_value"]]}

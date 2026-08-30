@@ -105,6 +105,10 @@ def main() -> None:
     samples = load_jsonl(args.dataset)
     catalog_ids, categories, products = catalog_index(args.catalog)
     agent = Agent(args.catalog)
+    # Training must not happen inside a turn; build it up front like a
+    # submission would ship a prebuilt index.
+    print("building semantic index (one-time)...")
+    print("  semantic index:", "ready" if agent.prewarm_semantic() else "unavailable")
     result = evaluate_paraphrased(agent, samples, catalog_ids, categories, products, args.seed)
     print(json.dumps(result, indent=2))
 

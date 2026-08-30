@@ -1,0 +1,8 @@
+# The scored agent path has no third-party dependencies: Python 3.10+ stdlib only.
+#
+# Optional, and never on the scored path:
+#   numpy      - self-trained semantic index for free-form input (starter/semantic.py)
+#   anthropic  - Claude slot extraction for free-form input (starter/llm_layer.py)
+#
+# Both degrade silently to the deterministic engine when absent. See
+# requirements-dev.txt to install them plus the test runner.
