@@ -1,5 +1,7 @@
 # Shopping Copilot — Inverse Intent-Card Retrieval
 
+[![Evaluate](https://github.com/kimiyangg/techjam-shopping-copilot/actions/workflows/evaluate.yml/badge.svg)](https://github.com/kimiyangg/techjam-shopping-copilot/actions/workflows/evaluate.yml)
+
 TikTok TechJam 2026, Track 4. A conversational shopping agent that reconstructs
 the buyer's latent *intent card* — the structured set of constraints behind
 their messages — and runs retrieval as its inverse: every constraint is a key
@@ -73,7 +75,9 @@ protocol, so ~3.5 is the floor) · boundary 1.00/0.93/3.7.
 > in `DEVLOG.md` §7. Those changes are score-neutral-to-positive on a
 > synthetic replay through the unmodified evaluator (+0.003 easy, +0.010 hard,
 > +0.014 under paraphrase), but the public-set figures need re-measuring on the
-> real catalog: `python3 -m evaluator.local_evaluator`.
+> real catalog. The **Evaluate** workflow does exactly that on every push and
+> publishes the tables to the run summary — take the numbers from there and
+> delete this note.
 
 ### The free-form path: self-trained semantic retrieval + optional LLM
 
@@ -97,7 +101,7 @@ handled by two additional channels, exercised in the interactive demo:
 - **Claude slot extraction** (`starter/llm_layer.py`, optional): when
   `ANTHROPIC_API_KEY` is set, free-form messages are also extracted to the
   same constraint-slot structure the template parser produces (structured
-  outputs, 8s timeout, silent fallback). Works without it.
+  outputs, 30s timeout, no retries, silent fallback). Works without it.
 
 
 ### Robustness: self-administered paraphrase stress test
@@ -168,7 +172,22 @@ python3 demo.py                        # interactive chat demo
 ```
 
 The evaluator is byte-identical to the organizer's release — verify with
-`git diff upstream/main -- evaluator/ data/public_set.jsonl` (empty).
+`git remote add upstream https://github.com/TechJam2026/techjam-conversational-search
+&& git fetch upstream && git diff upstream/main -- evaluator/ data/public_set.jsonl`
+(empty).
+
+### …or read them off CI
+
+`.github/workflows/evaluate.yml` runs on every push. It downloads and checksums
+the official catalog, fails if `evaluator/` or `data/public_set.jsonl` has
+drifted from upstream, scores the 200 public sessions, and publishes the
+headline and per-scenario tables to the run summary (`scripts/eval_summary.py`),
+with `results.json` attached as an artifact.
+
+The scoring job installs **nothing** — it asserts that numpy, `anthropic` and
+pytest are all un-importable before it starts, so the "standard library only"
+claim in the disclosures is enforced rather than asserted. Every number quoted
+in this README should be traceable to one of those runs.
 
 ## Repository layout
 
@@ -184,6 +203,12 @@ The evaluator is byte-identical to the organizer's release — verify with
 - `stress/` — paraphrase stress harness + synthetic-dialogue alignment trainer
 - `evaluator/`, `data/public_set.jsonl` — official, unmodified
 - `demo.py` — interactive CLI demo
+- `scripts/eval_summary.py` — renders a run of the evaluator as a CI job summary
+- `.github/workflows/evaluate.yml` — tests + public-set evaluation on every push
+- `PROJECT_DESCRIPTION.md` — the written Devpost description (deliverable 4.5.1)
+- `DEMO_VIDEO.md` — demo video plan, pre-recording checks (deliverable 4.5.3)
+- `SUBMISSION.md` — submission checklist and Devpost narrative fields
+- `DEVLOG.md` — build history and the rationale behind each decision
 
 ## Limitations & what we'd improve with more time
 
@@ -206,4 +231,16 @@ The evaluator is byte-identical to the organizer's release — verify with
 
 ## Team
 
-Kimi Yang (@kimiyangg) — solo: design, implementation, evaluation, write-up.
+- **Kimi Yang** ([@kimiyangg](https://github.com/kimiyangg)) — problem analysis
+  and the inverse intent-card reframing; intent-card index, parser and ranking
+  engine; IDF weighting and the confidence-gated reveal; the self-trained LSA
+  semantic index; the paraphrase stress harness and alignment trainer; evaluation.
+- **Li Mu-En / Nathan Lee** ([@RobotHanzo](https://github.com/RobotHanzo)) —
+  robustness and correctness hardening across the agent, index, parser, semantic
+  and LLM modules: decoupling `starter/` from `evaluator/`, keeping model
+  building and network calls off the scored turn, enforcing the override and
+  no-preference dialog rules, fixing disclosure segmentation, and making the
+  documented reproduction steps actually run — plus the hardening, card-parity
+  and submission-bundle test suites, and the evaluation CI workflow.
+- **Justin Tan** ([@justhehippo](https://github.com/justhehippo)) — the written
+  project description (`PROJECT_DESCRIPTION.md`) and the demo video voiceover.

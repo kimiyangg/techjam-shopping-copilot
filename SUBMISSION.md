@@ -2,13 +2,24 @@
 
 Everything to paste/record for the Devpost submission. Deadline: **1 Sep, 12:00pm SGT**.
 
+Three deliverables, three documents:
+
+| Deliverable | Document |
+|---|---|
+| 4.5.1 Written project description | [`PROJECT_DESCRIPTION.md`](PROJECT_DESCRIPTION.md) — long-form; the short narrative fields are below |
+| 4.5.2 Public repository + README | [`README.md`](README.md) |
+| 4.5.3 Demo video | [`DEMO_VIDEO.md`](DEMO_VIDEO.md) — table of contents, pre-recording checks, recording checklist |
+
 ## Pre-submission checklist
 
 - [ ] `gh repo edit kimiyangg/techjam-shopping-copilot --visibility public`
 - [ ] `git pull upstream main` one last time (organizer evaluator updates apply to everyone)
-- [ ] Fresh `python3 -m evaluator.local_evaluator` run; screenshot/save results.json
-- [ ] Record demo video (runsheet below), upload to YouTube as **Public**, link in Devpost
-- [ ] Paste the description below into Devpost; attach repo link
+- [ ] Fresh evaluation: push to `main` or run the **Evaluate** workflow, then take the
+      numbers from the run summary and update `README.md`, `PROJECT_DESCRIPTION.md` §7 and
+      the **Results** paragraph below — deleting the pending-re-measurement notes in all
+      three. `results.json` is attached to the run as an artifact.
+- [ ] Record demo video per `DEMO_VIDEO.md`, upload to YouTube as **Public**, link in Devpost
+- [ ] Paste the narrative below into Devpost; attach repo and video links
 
 ## Devpost description (paste this)
 
@@ -31,17 +42,21 @@ protocol locks the target's rank at first appearance.
 0.125 / 0.068 / 9.81 / 0.107). All four scenario types (buying, browsing, intent
 override, boundary) hit 100%. The scored run uses zero LLM tokens and <50ms/turn.
 (Measured through DEVLOG §6; the §7 robustness pass is
-score-neutral-to-positive on synthetic replays and needs one final
-`python3 -m evaluator.local_evaluator` on the real catalog before submission.)
+score-neutral-to-positive on synthetic replays and needs one final run on the real
+catalog before submission — take it from the **Evaluate** workflow's run summary, then
+delete this parenthetical.)
 
 **How it maps to the four pillars** — Dual-track intent routing (buying/browsing/override detected at turn 1, distinct behavior per track); hybrid multi-route retrieval (exact-constraint, verbatim key recovery, token overlap, category, self-trained dense vector) fused in one ranker; a dialog state machine with incremental slots, catalog-guarded override replacement, no-preference locking that redirects the next question, over-generality-triggered proactive clarification (the confidence gate), and candidate elimination that turns every failed slate into evidence; short-term context distillation (conversation re-embedded each turn) plus profile-aware ranking; all optimized directly against the HR@10/MRR/MTTC matrix.
 
 **How we built it** — Offline, we derive every product's possible constraint phrases
 using the protocol's own public derivation and invert them into an IDF-weighted
 index. At runtime, a deterministic parser covers the protocol's message templates;
-free-form language goes through a Claude (claude-opus-5) structured-output extraction
-layer that emits the same slot structure, with hard timeouts and silent fallback so
-the deterministic core can never be hurt by network failures. Budget is treated as a
+free-form language falls through three channels in order — verbatim key recovery, a
+self-trained LSA index (TF-IDF + randomized SVD, 128d, numpy), and finally an optional
+Claude (claude-opus-5) structured-output layer emitting the same slot structure, with a
+hard timeout and silent fallback so the deterministic core can never be hurt by network
+failures. Only the first two ship as required; the scored path uses none of the three.
+Budget is treated as a
 soft preference band, ratings as weak priors, and after the card is exhausted an
 exact-card-match boost separates the target from superset lookalikes.
 
@@ -64,24 +79,24 @@ modeling.
 - **Libraries/frameworks**: Python 3 standard library for the scored engine (`requirements.txt` is empty by design); numpy for the self-trained latent semantic index; `anthropic` SDK (optional); pytest for tests (`requirements-dev.txt`)
 - **Datasets/assets**: Official frozen Track 4 catalog + 200 public sessions (Amazon Reviews 2023 derived, provided by organizers). No external training data.
 
-## Demo video runsheet (~3 minutes)
+## Demo video
 
-1. **0:00–0:25 — The problem.** One slide/screen: Track 4 in one sentence, the
-   scoring (HR@10 50% / MRR 30% / MTTC 20%), baseline numbers on screen.
-2. **0:25–1:05 — The insight.** Show `evaluator/local_evaluator.py`'s `intent_card()`
-   briefly: "the customer's hints are structured constraints derived from the target's
-   own metadata — so we reconstruct that card and invert the lookup." Show the
-   architecture diagram (design artifact §02).
-3. **1:05–2:05 — Live demo.** `python3 demo.py`:
-   - Type a templated buying opener → instant top-10, show state line.
-   - Type a *free-form* sentence ("cozy winter sweater", "gold necklace for a wedding")
-     → the self-trained semantic index matches by meaning — no API, no network.
-     Mention: "we trained this dense retrieval model on the catalog itself, in numpy."
-   - Show an override ("forget that — white casual sneakers instead").
-4. **2:05–2:45 — Results.** Run `python3 -m evaluator.local_evaluator`; show the
-   aggregate + per-scenario JSON. Flash the ablation table from the README.
-5. **2:45–3:00 — Wrap.** "Deterministic core, LLM generality, 0.107 → 0.956.
-   Repo, tests, and one-command repro in the README."
+The table of contents, per-segment notes, pre-recording verification list, recording
+checklist and the trademark/copyright guidance all live in
+[`DEMO_VIDEO.md`](DEMO_VIDEO.md) — kept there as the single source of truth so the plan
+and this kit cannot drift apart. Voiceover: Justin Tan (@justhehippo).
 
-Tips: record at 1080p, terminal font ≥16pt, have the evaluator pre-run once so the
-index build is warm, keep the API key exported before recording the free-form part.
+## Team contributions (deliverable 4.5.2)
+
+- **Kimi Yang** (@kimiyangg) — problem analysis and the inverse intent-card reframing;
+  intent-card index, parser and ranking engine; IDF weighting and the confidence-gated
+  reveal; the self-trained LSA semantic index; the paraphrase stress harness and alignment
+  trainer; evaluation.
+- **Li Mu-En / Nathan Lee** (@RobotHanzo) — robustness and correctness hardening across the
+  agent, index, parser, semantic and LLM modules: decoupling `starter/` from `evaluator/`,
+  keeping model building and network calls off the scored turn, enforcing the override and
+  no-preference dialog rules, fixing disclosure segmentation, and making the documented
+  reproduction steps actually run — plus the hardening, card-parity and submission-bundle
+  test suites, and the evaluation CI workflow.
+- **Justin Tan** (@justhehippo) — the written project description
+  (`PROJECT_DESCRIPTION.md`) and the demo video voiceover.

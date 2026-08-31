@@ -21,7 +21,14 @@ python3 -m pytest tests/
 
 # One-time build of the free-form semantic index (optional; never runs in a turn)
 python3 -m starter.build_index
+
+# Render a finished results.json as a Markdown report (what CI posts to the run summary)
+python3 scripts/eval_summary.py --results results.json
 ```
+
+CI (`.github/workflows/evaluate.yml`) runs tests + the full evaluation on every push and
+publishes the metric tables to the run summary. **Any score quoted in a doc must come from
+one of those runs** — never from memory or a stale table.
 
 Python 3.10+, stdlib-only starter. Baseline scores to beat: HR@10 0.125, MRR 0.068, MTTC 9.81 (technical score ~0.107).
 
@@ -32,6 +39,14 @@ Python 3.10+, stdlib-only starter. Baseline scores to beat: HR@10 0.125, MRR 0.0
 - `evaluator/local_evaluator.py` — official evaluator. **Never modify** (final scores must come from the unmodified evaluator); same for `data/public_set.jsonl` labels.
 - `data/catalog.jsonl` — 50k products, untracked. `data/public_set.jsonl` — 200 dev sessions.
 - `docs/` — API contract (JSON schema), competition spec, submission rules, evaluation config.
+- `scripts/eval_summary.py` — renders `results.json` as a CI job summary. Not part of the bundle.
+- `.github/workflows/evaluate.yml` — tests job (dev deps) + evaluation job that installs
+  **nothing**, asserting numpy/anthropic/pytest are un-importable so the stdlib-only claim is
+  enforced, and failing if `evaluator/` or `data/public_set.jsonl` drifts from upstream.
+- Submission docs: `PROJECT_DESCRIPTION.md` (deliverable 4.5.1), `DEMO_VIDEO.md` (4.5.3),
+  `README.md` (4.5.2), `SUBMISSION.md` (checklist + Devpost narrative fields). Team
+  contributions are listed in all four and must stay in sync: Kimi Yang (@kimiyangg),
+  Li Mu-En / Nathan Lee (@RobotHanzo), Justin Tan (@justhehippo).
 
 ## Hard rules
 

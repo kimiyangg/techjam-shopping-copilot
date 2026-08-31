@@ -1,0 +1,157 @@
+name: Evaluate
+
+# Re-measures the numbers quoted in README.md and PROJECT_DESCRIPTION.md against
+# the unmodified official evaluator, and publishes them to the run summary — so a
+# claimed score is always traceable to a specific commit rather than remembered.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      min_score:
+        description: "Fail the run if the technical score drops below this (0 = report only)"
+        required: false
+        default: "0"
+
+permissions:
+  contents: read
+
+env:
+  PYTHON_VERSION: "3.11"
+  KIT_RELEASE: https://github.com/TechJam2026/techjam-conversational-search/releases/download/participant-kit
+
+jobs:
+  tests:
+    name: Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+
+      - name: Restore catalog
+        id: catalog
+        uses: actions/cache@v4
+        with:
+          path: data/catalog.jsonl
+          key: catalog-participant-kit-v1
+
+      - name: Download and verify catalog
+        if: steps.catalog.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          curl -sSfLO "$KIT_RELEASE/catalog.jsonl.gz"
+          curl -sSfLO "$KIT_RELEASE/SHA256SUMS"
+          grep catalog SHA256SUMS | sha256sum -c -
+          gzip -dc catalog.jsonl.gz > data/catalog.jsonl
+
+      - name: Install dev dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Run test suite
+        run: |
+          python -m pytest tests/ -q --junit-xml=pytest-report.xml
+
+      - name: Summarise
+        if: always()
+        run: |
+          {
+            echo "## Tests"
+            echo
+            if [ "${{ job.status }}" = "success" ]; then
+              echo "✅ \`python -m pytest tests/\` passed with the real 50k catalog present,"
+              echo "so the card-spec parity test ran against the full catalog rather than skipping."
+            else
+              echo "❌ \`python -m pytest tests/\` failed — see the job log."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pytest-report
+          path: pytest-report.xml
+
+  evaluate:
+    name: Public-set evaluation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Restore catalog
+        id: catalog
+        uses: actions/cache@v4
+        with:
+          path: data/catalog.jsonl
+          key: catalog-participant-kit-v1
+
+      - name: Download and verify catalog
+        if: steps.catalog.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          curl -sSfLO "$KIT_RELEASE/catalog.jsonl.gz"
+          curl -sSfLO "$KIT_RELEASE/SHA256SUMS"
+          grep catalog SHA256SUMS | sha256sum -c -
+          gzip -dc catalog.jsonl.gz > data/catalog.jsonl
+
+      # No `pip install` anywhere in this job. The submission claims the scored
+      # path is standard-library-only; the cleanest way to keep that claim honest
+      # is to score in an environment where nothing else is installable.
+      - name: Assert a stdlib-only environment
+        run: |
+          set -euo pipefail
+          for module in numpy anthropic pytest; do
+            if python -c "import $module" 2>/dev/null; then
+              echo "::error::$module is importable; the scored path must not depend on it"
+              exit 1
+            fi
+          done
+          echo "numpy, anthropic and pytest are all absent — scoring on the stdlib alone."
+
+      - name: Verify the evaluator and labels are unmodified
+        run: |
+          set -euo pipefail
+          git remote add upstream https://github.com/TechJam2026/techjam-conversational-search
+          git fetch --quiet --depth=50 upstream main
+          if git diff --quiet upstream/main -- evaluator/ data/public_set.jsonl; then
+            echo "✅ \`evaluator/\` and \`data/public_set.jsonl\` are byte-identical to upstream." \
+              >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::error::evaluator/ or data/public_set.jsonl differs from upstream/main"
+            git diff --stat upstream/main -- evaluator/ data/public_set.jsonl
+            exit 1
+          fi
+
+      - name: Run the official evaluator
+        run: |
+          set -euo pipefail
+          start=$(date +%s)
+          python -m evaluator.local_evaluator --output results.json
+          echo "EVAL_SECONDS=$(( $(date +%s) - start ))" >> "$GITHUB_ENV"
+
+      - name: Publish results to the run summary
+        run: |
+          python scripts/eval_summary.py \
+            --results results.json \
+            --baseline docs/baseline_results.json \
+            ${{ github.event.inputs.min_score != '' && github.event.inputs.min_score != '0' && format('--min-score {0}', github.event.inputs.min_score) || '' }}
+          {
+            echo "Evaluated 200 sessions in ${EVAL_SECONDS}s on \`${GITHUB_SHA:0:7}\`,"
+            echo "including the one-time catalog index build."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: results-${{ github.sha }}
+          path: results.json

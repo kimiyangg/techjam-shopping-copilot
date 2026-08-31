@@ -16,10 +16,12 @@ marked *stress*.
 | 4 | Self-trained semantic index (LSA) for free-form input | 0.956 (unchanged, by design) |
 | 5 | Paraphrase stress harness + trained alignment model | 0.956 official / **0.411 under paraphrase attack** (from 0.090) |
 | 6 | Adversarial self-review + robustness pass (§7) | pending re-measure on the real catalog |
+| 7 | Submission docs + evaluation CI (§8) | measurement moved into CI |
 
 Final (through step 5): **HR@10 1.000 · MRR 0.970 · MTTC 2.74 ·
 TechnicalScore 0.956.** Step 6 has not been re-measured on the real catalog —
-see §7 for what changed and what it measured synthetically.
+see §7 for what changed and what it measured synthetically, and §8 for the CI
+workflow that now does the re-measuring.
 
 ---
 
@@ -307,7 +309,54 @@ No regression on any scenario except boundary MRR in the hard replay
 (0.825 → 0.736 across 10 sessions — one or two sessions, from the changed
 `_choose_ask` sequence). **These are synthetic.** The real catalog was not
 available in the working tree, so the public-set numbers still need
-`python3 -m evaluator.local_evaluator` before submission.
+a real evaluator run before submission — which §8 automates.
+
+## 8. Submission documents + evaluation CI
+
+The written deliverables existed only as a Google-Docs export sitting outside the
+repo, and every score in the docs traced back to a run nobody could point at. Both
+are now repository artifacts.
+
+**Docs.** The export was fact-checked line by line against the code and split along
+the deliverable boundary: `PROJECT_DESCRIPTION.md` (4.5.1) and `DEMO_VIDEO.md` (4.5.3),
+with `README.md` (4.5.2) and `SUBMISSION.md` as the checklist. The architecture figure
+was extracted out of the `.docx` to `docs/architecture.png` so it renders in Markdown.
+
+Five things the fact-check turned up:
+
+- **Team attribution was wrong.** The docs said "solo"; the project is three people —
+  Kimi Yang (@kimiyangg), Li Mu-En / Nathan Lee (@RobotHanzo), Justin Tan (@justhehippo).
+  Corrected in all four documents — deliverable 4.5.2 asks for this explicitly, so it was
+  the most costly error in the set.
+- `llm_layer.py` has `TIMEOUT_SECONDS = 30.0`, not the 8s the README claimed. README
+  fixed; this log's earlier entries left as written, since they were true when written.
+- The open "confirm the model identifier" TODO resolved to `claude-opus-5`
+  (env-overridable via `SHOPPING_COPILOT_MODEL`).
+- The reproduction steps omitted the catalog download, so they could not run from a
+  clean clone. The README's drift check also assumed an `upstream` remote that a fresh
+  clone does not have; both now spell out the missing step.
+- The video plan quoted "0.107 → 0.956" as on-screen fact with no note that the figure
+  predates §7.
+
+**CI** (`.github/workflows/evaluate.yml`). Two jobs. `tests` installs the dev extras and
+runs pytest with the real catalog present, which un-skips `test_card_spec_parity` against
+the full 50k rather than letting it skip. `evaluate` installs **nothing** and asserts
+numpy, `anthropic` and pytest are all un-importable before scoring — the stdlib-only
+disclosure is now enforced by the build rather than asserted in prose. It also fails if
+`evaluator/` or `data/public_set.jsonl` drifts from `upstream/main`, then scores the 200
+sessions and posts headline + per-scenario tables to the run summary via
+`scripts/eval_summary.py`, with `results.json` as an artifact.
+
+The catalog is cached between runs (`catalog-participant-kit-v1`) after a checksum-verified
+download from the participant-kit release, so a normal run does not re-fetch 19 MB.
+
+`eval_summary.py` also takes `--min-score`, exposed as a `workflow_dispatch` input and
+defaulting to `0` (report only). Turning it into a real regression gate is a one-field
+change once the post-§7 number is known.
+
+The rule this establishes: **a score quoted in a document must be traceable to a CI run.**
+The pending-re-measurement notes in the README, `PROJECT_DESCRIPTION.md` §7 and
+`SUBMISSION.md` stay until a run replaces them.
 
 ## Key decisions and their rationale
 
@@ -343,11 +392,16 @@ stress/paraphraser.py     simulator events -> varied human English
 stress/harness.py         paraphrased replay of the official 200 sessions
 stress/train_alignment.py synthetic-dialogue alignment trainer (ridge, CV)
 demo.py                   interactive CLI (always_reveal on)
+scripts/eval_summary.py   results.json -> CI job summary (not in the bundle)
+.github/workflows/        tests + public-set evaluation on every push
 tests/                    468 tests: parser/index/agent, submission-bundle
                           isolation, evaluator-drift + card-spec parity
 evaluator/, data/         official, byte-identical to upstream
 DEVLOG.md                 this file
-SUBMISSION.md             Devpost text + video runsheet + checklist
+README.md                 deliverable 4.5.2 (overview, setup, repro, team)
+PROJECT_DESCRIPTION.md    deliverable 4.5.1 (written Devpost description)
+DEMO_VIDEO.md             deliverable 4.5.3 (video ToC + pre-recording checks)
+SUBMISSION.md             checklist + Devpost narrative fields + team
 IDEAS.md                  original planning doc (pre-implementation)
 ```
 
@@ -355,7 +409,8 @@ IDEAS.md                  original planning doc (pre-implementation)
 
 ```
 pip install -r requirements-dev.txt      # pytest + numpy + anthropic
-python3 -m evaluator.local_evaluator     # official eval  -> re-measure after step 7
+python3 -m evaluator.local_evaluator     # official eval  -> or read it off CI (§8)
+python3 scripts/eval_summary.py          # render results.json as a Markdown report
 python3 -m pytest tests/                 # 468 tests
 python3 -m starter.build_index           # one-time semantic index (never runs in a turn)
 python3 demo.py                          # interactive demo
@@ -370,5 +425,7 @@ daily for evaluator updates; the drift test fails loudly if their
 
 ## Remaining (human) tasks — see SUBMISSION.md
 
-Record the demo video, make the repo public, final `git pull upstream main`
-plus a fresh eval run, submit on Devpost before **1 Sep, 12:00 SGT**.
+Record the demo video (`DEMO_VIDEO.md`), make the repo public, final
+`git pull upstream main`, then take the post-§7 numbers off a CI run and clear the
+pending-re-measurement notes in `README.md`, `PROJECT_DESCRIPTION.md` §7 and
+`SUBMISSION.md`. Submit on Devpost before **1 Sep, 12:00 SGT**.
