@@ -7,9 +7,12 @@ the buyer's latent *intent card* — the structured set of constraints behind
 their messages — and runs retrieval as its inverse: every constraint is a key
 into a precomputed index over the 50,000-product catalog.
 
-**Result on the public set (200 sessions): Hit Rate@10 1.000 · MRR 0.970 ·
-MTTC 2.74 · technical score 0.956** — versus the official starter baseline's
-0.125 / 0.068 / 9.81 / 0.107.
+**Result on the public set (200 sessions): Hit Rate@10 0.995 · MRR 0.951 ·
+MTTC 2.675 · technical score 0.949** — versus the official starter baseline's
+0.125 / 0.068 / 9.81 / 0.107. Measured by the
+[Evaluate workflow](https://github.com/kimiyangg/techjam-shopping-copilot/actions/runs/33353324314)
+on commit `495d8f3`, running the unmodified official evaluator with no
+third-party packages installed.
 
 ## How it works
 
@@ -63,21 +66,25 @@ catalog product and invert it into two maps: `constraint phrase → products`
 | Stage | HR@10 | MRR | MTTC | TechnicalScore |
 |---|---|---|---|---|
 | Official BM25 starter | 0.125 | 0.068 | 9.81 | 0.107 |
-| + intent-card index, parser, coverage ranking | 1.000 | 0.700 | 1.87 | 0.892 |
-| + IDF weighting, confidence-gated reveal, exact-card boost | 1.000 | 0.964 | 2.79 | 0.954 |
-| + fuzzy constraint resolution (full system) | **1.000** | **0.970** | **2.74** | **0.956** |
+| + intent-card index, parser, coverage ranking † | 1.000 | 0.700 | 1.87 | 0.892 |
+| + IDF weighting, confidence-gated reveal, exact-card boost † | 1.000 | 0.964 | 2.79 | 0.954 |
+| + fuzzy constraint resolution † | 1.000 | 0.970 | 2.74 | 0.956 |
+| + robustness hardening (full system, CI run `33353324314`) | **0.995** | **0.951** | **2.675** | **0.949** |
 
-Per-scenario (full system): buying 1.00/0.99/2.4 · browsing 1.00/0.96/2.6 ·
-intent_override 1.00/0.95/3.9 (hits before the override turn are ignored by
-protocol, so ~3.5 is the floor) · boundary 1.00/0.93/3.7.
+† Intermediate rows are the figures recorded when each stage landed, before the
+robustness pass in `DEVLOG.md` §7; only the final row comes from the CI run.
 
-> **Note.** The table above was measured before the robustness pass described
-> in `DEVLOG.md` §7. Those changes are score-neutral-to-positive on a
-> synthetic replay through the unmodified evaluator (+0.003 easy, +0.010 hard,
-> +0.014 under paraphrase), but the public-set figures need re-measuring on the
-> real catalog. The **Evaluate** workflow does exactly that on every push and
-> publishes the tables to the run summary — take the numbers from there and
-> delete this note.
+Per-scenario (full system, same run): buying 1.000/0.983/2.24 ·
+browsing 1.000/0.960/2.45 · intent_override 1.000/0.950/3.90 (hits before the
+override turn are ignored by protocol, so ~3.5 is the floor) ·
+boundary 0.900/0.611/4.30.
+
+The hardening pass cost 0.007 of technical score against the pre-pass
+measurement, and all of it sits in `boundary`: one of that scenario's ten
+sessions (`public_0187`) now misses, and two more land the target at rank 4.
+Boundary is 5% of the weighted mix and n=10, so a single session moves its
+HR@10 by 0.100 — but it is a real regression, not sampling noise, and it is the
+first thing to fix.
 
 ### The free-form path: self-trained semantic retrieval + optional LLM
 
@@ -121,7 +128,7 @@ queries to product space, validated on 2k held-out products.
 | Official starter on *templated* messages | 0.125 | 0.068 | 9.81 | 0.107 |
 | Ours under **adversarial paraphrasing**, semantic index only | 0.440 | 0.191 | 7.55 | 0.346 |
 | Ours under **adversarial paraphrasing** + trained alignment | **0.525** | **0.217** | **6.80** | **0.411** |
-| Ours on the actual protocol | 1.000 | 0.970 | 2.74 | 0.956 |
+| Ours on the actual protocol | 0.995 | 0.951 | 2.675 | 0.949 |
 
 Reproduce: `python3 -m stress.train_alignment && python3 -m stress.harness`.
 
@@ -182,7 +189,9 @@ The evaluator is byte-identical to the organizer's release — verify with
 the official catalog, fails if `evaluator/` or `data/public_set.jsonl` has
 drifted from upstream, scores the 200 public sessions, and publishes the
 headline and per-scenario tables to the run summary (`scripts/eval_summary.py`),
-with `results.json` attached as an artifact.
+with `results.json` attached as an artifact. The numbers above come from
+[run 33353324314](https://github.com/kimiyangg/techjam-shopping-copilot/actions/runs/33353324314)
+(commit `495d8f3`).
 
 The scoring job installs **nothing** — it asserts that numpy, `anthropic` and
 pytest are all un-importable before it starts, so the "standard library only"
@@ -212,7 +221,13 @@ in this README should be traceable to one of those runs.
 
 ## Limitations & what we'd improve with more time
 
-- **Residual MRR (~0.03)** comes from catalog near-duplicates with byte-identical
+- **The `boundary` regression** (HR@10 0.900, MRR 0.611 on n=10) is the largest
+  open gap. `public_0187` misses outright and two more sessions settle at rank 4;
+  we have not yet traced which of the hardening changes causes it, so diagnosing
+  those three sessions turn-by-turn is the next thing we'd do. The suspect is the
+  interaction between "no preference" attribute locking and which attribute
+  `_choose_ask` picks next once that signal is gone.
+- **Residual MRR (~0.05)** comes from catalog near-duplicates with byte-identical
   intent cards (mass-market apparel sharing boilerplate feature text); the
   protocol never emits a distinguishing signal for them. A learned prior over
   catalog co-purchase structure could break those ties.
