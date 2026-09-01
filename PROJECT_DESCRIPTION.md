@@ -336,3 +336,8 @@ standard-library-only — and publishes the metric tables to the run summary. Ev
   submission-bundle test suites, and the evaluation CI workflow.
 - **Justin Tan ([@justhehippo](https://github.com/justhehippo))** — this written project
   description and the demo video voiceover.
+
+## 13. Submissions
+
+1. GitHub Repo: https://github.com/kimiyangg/techjam-shopping-copilot
+2. Demo Video YouTube Link: https://youtu.be/L6fwDnQkF6s
